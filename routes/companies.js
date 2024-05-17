@@ -1,6 +1,8 @@
 const express = require("express");
-const ExpressError = require("./expressError");
+const ExpressError = require("../expressError");
 const router = new express.Router();
+
+const slugify = require("slugify");
 
 const db = require("../db");
 
@@ -20,20 +22,24 @@ router.get("/", async (req, res, next) => {
 
 router.get("/:code", async (req, res, next) => {
     try{
-        const { code }= req.params;
-
-        const result = await db.query(
-            `SELECT code,name,description
+        const results = await db.query(
+            `SELECT code,name,description,industry
             FROM companies
-            WHERE code=$1
-            RETURNING code,name`,
-            [code]);
+            LEFT JOIN companies-industries
+            ON companies.code = companies-industries.comp_code
+            LEFT JOIN industries
+            ON companies-industries.industries_code = industries.code
+            WHERE companies.code=$1`,
+            [req.params.code]);
 
-            if (result.rows.length === 0) {
-                throw new ExpressError(`Company not found`, 404);
-            }
+        if (result.rows.length === 0) {
+            throw new ExpressError(`Company not found`, 404);
+        }
 
-        return res.json({company : result.rows[0]});
+        const { code, name, description } = results.rows[0];
+        const industries = results.rows.map(row => row.industry);
+
+        return res.json({company : {code, name, description, industries}});
     } catch (err) {
         return next(err);
     }
@@ -43,20 +49,24 @@ router.get("/:code", async (req, res, next) => {
 
 router.post("/", async (req, res, next) => {
     try{
-        const { code, name, description }= req.body;
+        const { code, name, description } = req.body;
 
         const result = await db.query(
             `INSERT INTO companies (code, name, description)
             VALUES($1, $2, $3)
             RETURNING code, name, description`,
-            [code, name, description]
+            [slugify(code, {
+                replacement: '-',
+                lower: true,
+                strict: true,
+            }), name, description]
         );
 
         if (result.rows.length === 0) {
             throw new ExpressError(`Unable to add company`, 400);
         }
 
-        return res.status(201).json({comapny : result.rows[0]});
+        return res.status(201).json({company : result.rows[0]});
     } catch (err) {
         return next(err);
     }
@@ -66,14 +76,14 @@ router.post("/", async (req, res, next) => {
 
 router.put("/:code", async (req, res, next) => {
     try{
-        const { code }= req.params;
-        const { name, description }= req.body;
+        const { code } = req.params;
+        const { name, description } = req.body;
 
         const result = await db.query(
             `UPDATE companies
             SET name=$1, description=$2
             WHERE code = $3
-            RETURNING name, description`,
+            RETURNING code, name, description`,
             [name, description, code]
         );
 
@@ -89,14 +99,14 @@ router.put("/:code", async (req, res, next) => {
 
 /** DELETE: Delete company with matching code */
 
-router.put("/:code", async (req, res, next) => {
+router.delete("/:code", async (req, res, next) => {
     try{
-        const { code }= req.params;
+        const { code } = req.params;
 
         const result = await db.query(
             `DELETE FROM companies
             WHERE code = $1
-            RETURNING name, description`,
+            RETURNING code, name, description`,
             [code]
         );
 

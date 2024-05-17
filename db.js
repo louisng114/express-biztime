@@ -1,6 +1,6 @@
 /** Database setup for BizTime. */
 
-const { client, Client } = require("pg");
+const { Client } = require("pg");
 
 let DB_URI;
 
